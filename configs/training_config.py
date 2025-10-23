@@ -2,11 +2,7 @@ from dataclasses import dataclass
 
 @dataclass
 class TrainingConfig():
-    # ==== Model ====
-    model_name_or_path: str = "google/flan-t5-large"
-
-    # ==== Paths ====
-    output_dir: str = "./experiments/flan_t5/random"
+    output_dir: str 
     overwrite_output_dir: bool = True
 
     # ==== Core Training ====
@@ -16,6 +12,7 @@ class TrainingConfig():
     learning_rate: float = 3e-5
     num_train_epochs: int = 3
     gradient_accumulation_steps: int = 1
+    train_validation: bool = False
 
     # ==== Generation ====
     predict_with_generate: bool = True
@@ -39,6 +36,3 @@ class TrainingConfig():
     logging_strategy: str = "steps"
     logging_steps: int = 100
     report_to: str = "none"
-
-    # ==== Hardware ====
-    fp16: bool = True

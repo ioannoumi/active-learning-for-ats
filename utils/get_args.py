@@ -36,8 +36,5 @@ def get_train_args(train_cfg: TrainingConfig) -> Seq2SeqTrainingArguments:
         # ==== Logging ====
         logging_strategy=train_cfg.logging_strategy,
         logging_steps=train_cfg.logging_steps,
-        report_to=train_cfg.report_to,
-
-        # ==== Hardware ====
-        fp16=train_cfg.fp16,
+        report_to=train_cfg.report_to
     )

@@ -1,13 +1,14 @@
 from datasets import Dataset
 import random
+from typing import List
 
 class ActiveLearningDatasetHandler():
-    def __init__(self,dataset: Dataset,seed = 42):
+    def __init__(self,dataset: Dataset,seed):
         self.rn = random.Random(seed)
         self.dataset = dataset
         self.labeled_idxs = set()
 
-    def sample_from_unlabelled(self,num_samples):
+    def sample_from_unlabelled(self,num_samples) -> List[int]:
         unlabeled_idxs = self.get_unlabeled_idxs()
         self.rn.shuffle(unlabeled_idxs)
         return unlabeled_idxs[:num_samples]
@@ -27,7 +28,7 @@ class ActiveLearningDatasetHandler():
     def get_unlabeled_data(self):
       return self.dataset.select(sorted(self.get_unlabeled_idxs()))
     
-    def get_dataset(self):
+    def get_dataset(self) -> Dataset:
       return self.dataset
 
     def summary(self):

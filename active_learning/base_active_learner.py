@@ -73,7 +73,7 @@ class BaseActiveLearner(ABC):
         # print(preds[0])
         # print(labels[0])
 
-        preds = np.where(preds < 0, self.tok.pad_token_id, preds)
+        preds = np.where(preds != -100, preds, self.tok.pad_token_id)
         decoded_preds = self.tok.batch_decode(preds, skip_special_tokens=True)
         
         labels = np.where(labels != -100, labels, self.tok.pad_token_id)
@@ -95,12 +95,11 @@ class BaseActiveLearner(ABC):
         return new_dict
 
     def train_and_evaluate(self):
-        print('Training starts')
         self.model = AutoModelForSeq2SeqLM.from_pretrained(self.model_name)
         data_collator = DataCollatorForSeq2Seq(self.tok, model=self.model)
-      
+
         self.tokenized_train_dataset = self._get_tokenized_dataset(self.data_handler.get_labeled_data())
-    
+
         trainer = Seq2SeqTrainer(
             model=self.model,
             args=self.train_args,
@@ -118,18 +117,18 @@ class BaseActiveLearner(ABC):
             num_beams = self.train_args.generation_num_beams
         )
 
-        self._save_and_write_metrics_to_file(metrics)
+        self.experiment_metrics.append(metrics)
+        self._write_data_to_file(metrics, '/eval_metrics.json')
         print("TEST ROUGE:", metrics)
 
         del trainer, data_collator
         gc.collect()
         torch.cuda.empty_cache()
 
-    def _save_and_write_metrics_to_file(self,metrics):
-        self.experiment_metrics.append(metrics)
-        json_metrics = json.dumps(metrics)
-        with open(self.train_args.output_dir + "/eval_metrics.json", "a") as f:
-            f.write(json_metrics + "\n")
+    def _write_data_to_file(self,data,path):
+        json_data = json.dumps(data)
+        with open(self.train_args.output_dir + path, "a") as f:
+            f.write(json_data + "\n")
 
     @abstractmethod
     def select_idxs(self) -> List[int]:
@@ -145,23 +144,21 @@ class BaseActiveLearner(ABC):
         pass
 
     def run(self):
-        print("=== ACTIVE LEARNING STRATEGY: ===",self.active_learning_cfg.strategy)
+        print(f"===ACTIVE LEARNING STRATEGY: {self.active_learning_cfg.strategy}===")
         if self.needs_warmup():
-            print("=== WARM UP ===",self.active_learning_cfg.strategy)
+            print("=== WARM UP ===")
             selected_idxs = self.data_handler.sample_from_unlabelled(self.active_learning_cfg.warmup_samples)
             self.data_handler.update_labeled_idxs(selected_idxs)
             self.train_and_evaluate()
-
+            self._write_data_to_file(selected_idxs, '/selected_idxs.json')
 
         for i in range(self.active_learning_cfg.iterations):
             print(f'=== ACTIVE LEARNING ITERATION: {i+1} ===')
             selected_idxs = self.select_idxs()
             self.data_handler.update_labeled_idxs(selected_idxs)
-            print(selected_idxs)
-            # print(self._chosen_data(selected_idxs))
             self.train_and_evaluate()
+            self._write_data_to_file(selected_idxs, '/selected_idxs.json')
             
-    
     def _chosen_data(self, selected_idxs):
         chosen_data = self.data_handler.get_dataset().select(selected_idxs)
         return chosen_data[self.dataset_cfg.target_col]
