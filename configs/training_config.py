@@ -12,7 +12,9 @@ class TrainingConfig():
     learning_rate: float = 3e-5
     num_train_epochs: int = 3
     gradient_accumulation_steps: int = 1
-    train_validation: bool = False
+    has_validation: bool = False
+    val_size: int = 0
+    min_train_steps: int = None
 
     # ==== Generation ====
     predict_with_generate: bool = True

@@ -8,10 +8,11 @@ class ActiveLearningDatasetHandler():
         self.dataset = dataset
         self.labeled_idxs = set()
 
-    def sample_from_unlabelled(self,num_samples) -> List[int]:
+    def sample_from_unlabeled(self,num_samples) -> List[int]:
         unlabeled_idxs = self.get_unlabeled_idxs()
         self.rn.shuffle(unlabeled_idxs)
-        return unlabeled_idxs[:num_samples]
+        sample_dataset = self.dataset.select(unlabeled_idxs[:num_samples])
+        return sample_dataset,unlabeled_idxs[:num_samples]
 
     def update_labeled_idxs(self,acquired_idxs):
         self.labeled_idxs.update(acquired_idxs)
@@ -31,5 +32,8 @@ class ActiveLearningDatasetHandler():
     def get_dataset(self) -> Dataset:
       return self.dataset
 
+    def get_labeled_count(self) -> int:
+      return len(self.labeled_idxs)
+    
     def summary(self):
       print(f"Labeled: {len(self.labeled_idxs)}, Unlabeled: {len(self.get_unlabeled_idxs())}")

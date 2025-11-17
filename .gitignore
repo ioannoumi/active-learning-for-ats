@@ -14,4 +14,5 @@ checkpoints/
 Thumbs.db
 .DS_Store
 
-experiments/
+experiments
+plots

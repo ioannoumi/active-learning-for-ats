@@ -9,5 +9,6 @@ class RandomActiveLearner(BaseActiveLearner):
     def needs_warmup(self):
         return False
     def select_idxs(self) -> List[int]:
-        return self.data_handler.sample_from_unlabelled(self.active_learning_cfg.samples_per_iteration)
+        _,sample_dataset_idxs = self.data_handler.sample_from_unlabeled(self.active_learning_cfg.samples_per_iteration)
+        return sample_dataset_idxs
     
