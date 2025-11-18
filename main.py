@@ -41,16 +41,16 @@ LEARNERS = {
 'loss_with_random': LossWithRandomActiveLearner
 }
 
-def main():
+def main(learner_strategy: str, dataset_key: str, model_key: str):
     print("Torch:", torch.__version__)
     print("CUDA available:", torch.cuda.is_available())
     if torch.cuda.is_available():
         print("GPU:", torch.cuda.get_device_name(0))
 
-    model_name = MODELS['bart_base']
+    model_name = MODELS[model_key]
     TRAIN_ARGS = get_model_train_args(model_name.split('/')[-1])
 
-    dataset_source, dataset_text_col, dataset_target_col = DATASETS['aeslc']
+    dataset_source, dataset_text_col, dataset_target_col = DATASETS[dataset_key]
     dataset_cfg = DatasetConfig(
         source=dataset_source,
         text_col=dataset_text_col,
@@ -59,26 +59,27 @@ def main():
         val_split='validation',
         test_split='test',
         max_source_length=512,
-        max_target_length=32,
-        test_size=20,
-        val_size=1000
+        max_target_length=32
     )
 
     active_learning_cfg = ActiveLearningConfig(
-        strategy='loss',
+        strategy= learner_strategy,
         iterations=15,
         samples_per_iteration=10,
         warmup_samples=10,
         hard_examples_topk=5,
-        bas_num_samples_to_rank=10,
+        bas_num_samples_to_rank=10  if learner_strategy == 'dual' else 100,
         bas_num_samples_mc_dropout=10,    
     )
 
-    train_dataset, val_dataset, eval_dataset = retrieve_dataset(dataset_cfg,is_parquet=False)
-
     #17,23,42
-    seeds = [81]
+    seeds = [42,17,23]
     for seed in seeds:
+        if seed == 42 and learner_strategy == 'random':
+            continue
+        
+        is_parquet = dataset_source.endswith('.parquet')
+        train_dataset, val_dataset, eval_dataset = retrieve_dataset(dataset_cfg, is_parquet=is_parquet)
         set_seed(seed)
 
         training_cfg = TrainingConfig(
@@ -119,5 +120,10 @@ def main():
 
 
 if __name__ == "__main__":
+    dataset_key = 'aeslc'
+    model_key = 'pegasus_large'
+
     nltk.download('punkt_tab')
-    main()
+    for learner_strategy in LEARNERS:
+        print(f"\n{'='*20} Running Experiment: Learner='{learner_strategy}', Model='{model_key}', Dataset='{dataset_key}' {'='*20}\n")
+        main(learner_strategy, dataset_key, model_key)

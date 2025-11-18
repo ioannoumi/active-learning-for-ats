@@ -8,8 +8,7 @@ import json
 
 class DUALActiveLearner(IDDSActiveLearner, BASActiveLearner, BaseActiveLearner):
     def __init__(self, *args, **kwargs):
-        IDDSActiveLearner.__init__(self, *args, **kwargs)
-        BASActiveLearner.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.acquired_samples_neighbor_idxs = []
 
     def needs_embeddings(self):
