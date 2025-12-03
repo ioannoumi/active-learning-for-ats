@@ -14,5 +14,8 @@ checkpoints/
 Thumbs.db
 .DS_Store
 
-experiments
-plots
+experiments/
+plots/
+xsum_env/
+*.png
+*.pt

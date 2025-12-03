@@ -19,6 +19,8 @@ class LossActiveLearner(BaseActiveLearner):
     def select_idxs(self) -> List[int]:
         loss_calculation_dataloader = self._get_data_after_training()
         loss_tuples = self._per_example_loss(self.model,loss_calculation_dataloader)
+        dict_loss_tuples = dict(loss_tuples)
+
         hard_examples = self._get_topk_hard_examples(loss_tuples,self.active_learning_cfg.hard_examples_topk)
         
         hard_idxs = torch.tensor([idx for idx, _ in hard_examples], device=self.embeddings.device)
@@ -30,12 +32,13 @@ class LossActiveLearner(BaseActiveLearner):
         unlabeled_embeddings = self.embeddings[unlabeled_idxs_tensor]
 
         acquired_idxs = self._select_similar_unlabeled(
+            hard_idxs,
             hard_embeddings,
             unlabeled_embeddings,
             unlabeled_idxs_tensor,
             self.active_learning_cfg.samples_per_iteration)
 
-        self._log_and_save_metrics(hard_examples, acquired_idxs)
+        self._log_and_save_metrics(dict_loss_tuples,hard_examples, acquired_idxs)
         return acquired_idxs.tolist()
 
     def _get_data_after_training(self) -> DataLoader:
@@ -94,11 +97,24 @@ class LossActiveLearner(BaseActiveLearner):
         hard_examples = loss_tuples[:k]
         return hard_examples #(IDX,LOSS)
 
-    def _select_similar_unlabeled(self,hard_embeddings: torch.Tensor, unlabeled_embs: torch.Tensor,unlabeled_idxs_tensor: torch.Tensor,num_to_select: int) -> torch.Tensor:
+    def _select_similar_unlabeled(self,hard_idxs: torch.Tensor,hard_embeddings: torch.Tensor, unlabeled_embs: torch.Tensor,unlabeled_idxs_tensor: torch.Tensor,num_to_select: int) -> torch.Tensor:
         similarities = torch.mm(hard_embeddings, unlabeled_embs.T)
-        max_sim_scores, _ = torch.max(similarities, dim=0)
+        max_sim_scores, max_sim_indices = torch.max(similarities, dim=0)
+
+        is_near_duplicate_mask = max_sim_scores >= 0.95
+        max_sim_scores[is_near_duplicate_mask] = -1.0
+
         sorted_indices = torch.argsort(max_sim_scores, descending=True)[:num_to_select]
 
+        responsible_hard_indices = max_sim_indices[sorted_indices]
+        responsible_hard_indices = hard_idxs[responsible_hard_indices].tolist()
+
+        selected_idxs = unlabeled_idxs_tensor[sorted_indices].tolist()
+
+        selection_log = [ {"selected_unlabeled_idx": selected, "responsible_hard_idx": responsible}   for selected, responsible in zip(selected_idxs, responsible_hard_indices)]
+
+        self.log_responsible_examples(selection_log, '/responsible_hard_examples.json')
+           
         return unlabeled_idxs_tensor[sorted_indices]
     
     def _get_batch_similarity_metrics(self,embeddings: torch.Tensor) -> dict:
@@ -123,12 +139,21 @@ class LossActiveLearner(BaseActiveLearner):
         similarities.fill_diagonal_(float('-inf'))
         return similarities.max(dim=1).values.mean().item()
     
-    def _log_and_save_metrics(self, hard_examples: list[tuple[int, float]], acquired_idxs: list[int]) -> None:
+    def _log_and_save_metrics(self, dict_loss_tuples: dict[int, float],hard_examples: list[tuple[int, float]], acquired_idxs: list[int]) -> None:
         self._log_hard_examples_json(hard_examples)
         self._write_data_to_file(dict(hard_examples), f'/top{self.active_learning_cfg.hard_examples_topk}_example_losses.json')
+        self._write_data_to_file(dict_loss_tuples, f'/all_examples_losses.json')
+
         acquired_embeddings = self.embeddings[acquired_idxs]
         batch_similarity_metrics = self._get_batch_similarity_metrics(acquired_embeddings)
         self._write_data_to_file(batch_similarity_metrics, '/batch_similarity_metrics.json')
+    
+    def log_responsible_examples(self,data,path):
+        with open(self.train_args.output_dir + path, "a") as f:
+            for item in data:
+                json_str = json.dumps(item)
+                f.write(json_str + "\n")
+            f.write("\n")
 
     def _log_hard_examples_json(self, hard_examples: list[tuple[int, float]]) -> None:
         documents = self.data_handler.get_dataset()
@@ -141,8 +166,8 @@ class LossActiveLearner(BaseActiveLearner):
             "rank": rank,
             "id": idx,
             "loss": round(loss, 6),
-            "doc_len": len(rec[self.dataset_cfg.text_col]),
-            "summ_len": len(rec[self.dataset_cfg.target_col]),
+            "doc_len": len(rec[self.dataset_cfg.text_col].split()),
+            "summ_len": len(rec[self.dataset_cfg.target_col].split()),
             "doc_preview": str(rec[self.dataset_cfg.text_col]).replace("\n", " ")[:300],
             "summ_preview": str(rec[self.dataset_cfg.target_col]).replace("\n", " ")[:200],
         }, ensure_ascii=False))

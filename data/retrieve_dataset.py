@@ -6,7 +6,7 @@ import logging
 
 def retrieve_dataset(cfg: DatasetConfig, is_parquet = False) -> tuple[Dataset,Dataset,Dataset]:
     
-    ds = load_dataset(path = 'parquet' if is_parquet else cfg.source, data_files= cfg.source if is_parquet else None)
+    ds = load_dataset(path = 'parquet' if is_parquet else cfg.source, data_files= cfg.source if is_parquet else None, trust_remote_code=True)
     ds = _filter_nulls(ds, cfg)
 
     if len(ds) == 1:
@@ -21,12 +21,19 @@ def retrieve_dataset(cfg: DatasetConfig, is_parquet = False) -> tuple[Dataset,Da
         train = ds[cfg.train_split]
         val   = ds[cfg.val_split]
         test  = ds[cfg.test_split]
+    
+    train = _deduplicate(train)
+
+    if 'xsum' in cfg.source:
+        logging.info("Applying XSum length filters...")
+        print("Applying XSum length filters...")
+        train = train.filter(_is_valid_data, fn_kwargs={'cfg': cfg})
+        print(f'New XSUM dataset has now length: {len(train)}')
 
     train = _safe_select(train, getattr(cfg,'train_size',None))
     val = _safe_select(val, getattr(cfg,'val_size',None))
     test = _safe_select(test, getattr(cfg,'test_size',None))
 
-    train = _deduplicate(train)
     train = add_index_column(train)
 
     return train,val,test
@@ -59,4 +66,17 @@ def _deduplicate(train_dataset: Dataset) -> Dataset:
 def _safe_select(ds: Dataset, n: int = None):
     if n is None or n >= len(ds):
         return ds
-    return ds.select(range(n))
+    return ds.shuffle(seed=42).select(range(n))
+
+
+def _is_valid_data(example, cfg: DatasetConfig):
+    doc_words = example[cfg.text_col].split()
+    summ_words = example[cfg.target_col].split()
+
+    if len(doc_words) <= 10:
+        return False
+
+    if len(summ_words) <= 3:
+        return False
+
+    return True

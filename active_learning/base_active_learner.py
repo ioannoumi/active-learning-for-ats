@@ -65,6 +65,7 @@ class BaseActiveLearner(ABC):
             ds = self.val_dataset.shuffle(seed=self.train_args.seed)
             val_subset = ds.select(range(n))
             self.tokenized_val_dataset = self._get_tokenized_dataset(val_subset)
+            print(f'Validation dataset has size: {len(self.tokenized_val_dataset)}')
 
         self.tokenized_eval_dataset = self._get_tokenized_dataset(eval_dataset)
         self.tokenized_train_dataset = None
@@ -77,7 +78,10 @@ class BaseActiveLearner(ABC):
             return
         
         emb_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-        self.embeddings = get_embeddings(self.data_handler.get_dataset(),dataset_cfg.text_col,emb_model)
+        
+        safe_dataset_source = self.dataset_cfg.source.replace('/', '_')
+        embeddings_path = f'embeddings/cached_embeddings_{safe_dataset_source}.pt'
+        self.embeddings = get_embeddings(self.data_handler.get_dataset(),self.dataset_cfg.text_col,emb_model,embeddings_path=embeddings_path)
     
     @abstractmethod
     def select_idxs(self) -> List[int]:
@@ -171,12 +175,7 @@ class BaseActiveLearner(ABC):
     def run(self):
         logging.info(f"\n\n\nRUNNING ACTIVE LEARNING STRATEGY {self.active_learning_cfg.strategy}\n\n")
         if self.needs_warmup():
-            logging.info("Strategy requires warmup, performing warmup...")
-            _,selected_idxs = self.data_handler.sample_from_unlabeled(self.active_learning_cfg.warmup_samples)
-            self.data_handler.update_labeled_idxs(selected_idxs)
-            self.train_and_evaluate()
-            self._write_data_to_file(selected_idxs, '/selected_idxs.json')
-            self._log_examples_json(selected_idxs)
+           self.perform_warmup()
 
         for i in range(self.active_learning_cfg.iterations):
             logging.info(f"\n\n\nSTARTING ACTIVE LEARNING ITERATION {i+1}\n\n")
@@ -191,6 +190,43 @@ class BaseActiveLearner(ABC):
             self.train_and_evaluate()
             self._write_data_to_file(selected_idxs, '/selected_idxs.json')
             self._log_examples_json(selected_idxs,i+1)
+            
+    def full_dataset_train(self):
+        self.train_args.num_train_epochs = self._calculate_num_train_epochs()
+
+        self.model = AutoModelForSeq2SeqLM.from_pretrained(self.model_name)
+        data_collator = DataCollatorForSeq2Seq(self.tok, model=self.model)
+
+        self.tokenized_train_dataset = self._get_tokenized_dataset(self.data_handler.get_unlabeled_data())
+
+        trainer = Seq2SeqTrainer(
+            model=self.model,
+            args=self.train_args,
+            train_dataset=self.tokenized_train_dataset,
+            eval_dataset=self.tokenized_val_dataset if self.has_validation else None,
+            processing_class=self.tok,
+            data_collator=data_collator,
+            compute_metrics=self._compute_metrics,
+            callbacks= [EarlyStoppingCallback(early_stopping_patience=4)] if self.has_validation else None
+        )
+
+        trainer.train()
+        metrics = trainer.evaluate(
+            eval_dataset = self.tokenized_eval_dataset,
+            max_length = self.dataset_cfg.max_target_length,
+            num_beams = self.train_args.generation_num_beams
+        )
+
+        self.experiment_metrics.append(metrics)
+        self._write_data_to_file(metrics, '/eval_metrics.json')
+
+    def perform_warmup(self) -> None:
+        logging.info("Strategy requires warmup, performing warmup...")
+        _,selected_idxs = self.data_handler.sample_from_unlabeled(self.active_learning_cfg.warmup_samples)
+        self.data_handler.update_labeled_idxs(selected_idxs)
+        self.train_and_evaluate()
+        self._write_data_to_file(selected_idxs, '/selected_idxs.json')
+        self._log_examples_json(selected_idxs)
 
     def _write_data_to_file(self,data,path):
         json_data = json.dumps(data)
@@ -208,8 +244,8 @@ class BaseActiveLearner(ABC):
             "tag": "Selected Sample",
             "rank": rank,
             "id": idx,
-            "doc_len": len(rec[self.dataset_cfg.text_col]),
-            "summ_len": len(rec[self.dataset_cfg.target_col]),
+            "doc_len": len(rec[self.dataset_cfg.text_col].split()),
+            "summ_len": len(rec[self.dataset_cfg.target_col].split()),
             "doc_preview": str(rec[self.dataset_cfg.text_col]).replace("\n", " ")[:300],
             "summ_preview": str(rec[self.dataset_cfg.target_col]).replace("\n", " ")[:200],
             }, ensure_ascii=False)

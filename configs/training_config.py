@@ -38,3 +38,4 @@ class TrainingConfig():
     logging_strategy: str = "steps"
     logging_steps: int = 100
     report_to: str = "none"
+    bf16: bool = True

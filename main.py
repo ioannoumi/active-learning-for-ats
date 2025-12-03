@@ -7,7 +7,10 @@ from active_learning.loss_active_learner import LossActiveLearner
 from active_learning.idds_active_learner import IDDSActiveLearner
 from active_learning.bas_active_learner import BASActiveLearner 
 from active_learning.dual_active_learner import DUALActiveLearner
-from active_learning.loss_with_random_active_learner import LossWithRandomActiveLearner     
+from active_learning.loss_with_random_active_learner import LossWithRandomActiveLearner   
+from active_learning.loss_with_random_active_learner_var1 import LossWithRandomActiveLearnerVAR1
+from active_learning.loss_with_idds_active_learner import LossWithIDDSActiveLearner
+from active_learning.loss_round_robin_active_learner import LossRoundRobinActiveLearner
 from configs.dataset_config import DatasetConfig
 from data.retrieve_dataset import retrieve_dataset
 from configs.training_config import TrainingConfig
@@ -21,24 +24,26 @@ from utils.get_model_train_args import get_model_train_args
 from utils.logging_utils import setup_logging_to_file
 
 MODELS = {
-"flan_t5_large": "google/flan-t5-large",
-"bart_base": "facebook/bart-base",
-"pegasus_large": "google/pegasus-large",
+"bart_base": "facebook/bart-base"
+# "pegasus_large": "google/pegasus-large"
 } 
 
 DATASETS = {
 'billsum': ('FiscalNote/billsum', 'text', 'summary'),
 'aeslc': ('Yale-LILY/aeslc', 'email_body','subject_line'),
-'wikihow': ('wikihow_clean_LLM_ready.parquet','text','summary')
+'wikihow': ('wikihow_clean_LLM_ready.parquet','text','summary'),
+'xsum': ('EdinburghNLP/xsum','document','summary')
 }
 
 LEARNERS = {
-'random': RandomActiveLearner,
-'loss': LossActiveLearner,
-'idds': IDDSActiveLearner,
-'bas': BASActiveLearner,
-'dual': DUALActiveLearner   ,
-'loss_with_random': LossWithRandomActiveLearner
+# 'loss': LossActiveLearner,
+# 'bas': BASActiveLearner,
+# 'loss_with_random': LossWithRandomActiveLearner
+# 'loss_with_random_var2': LossWithRandomActiveLearnerVAR2
+# 'dual': DUALActiveLearner,
+# 'random': RandomActiveLearner
+# 'idds': IDDSActiveLearner
+'loss_round_robin':LossRoundRobinActiveLearner
 }
 
 def main(learner_strategy: str, dataset_key: str, model_key: str):
@@ -59,9 +64,11 @@ def main(learner_strategy: str, dataset_key: str, model_key: str):
         val_split='validation',
         test_split='test',
         max_source_length=512,
-        max_target_length=32
+        max_target_length=32 if dataset_key == 'aeslc' else 128,
+        val_size=None if dataset_key == 'aeslc' else 1000,
+        test_size=None if dataset_key == 'aeslc' else 1000
     )
-
+    print(dataset_cfg)
     active_learning_cfg = ActiveLearningConfig(
         strategy= learner_strategy,
         iterations=15,
@@ -72,24 +79,28 @@ def main(learner_strategy: str, dataset_key: str, model_key: str):
         bas_num_samples_mc_dropout=10,    
     )
 
-    #17,23,42
-    seeds = [42,17,23]
+    #17,23,42,1, 123
+    seeds = [42,17]
     for seed in seeds:
-        if seed == 42 and learner_strategy == 'random':
+        print(f"Running experiment with seed {seed}")
+        if seed == 42 and (learner_strategy == 'idds' or learner_strategy == 'random'):
             continue
-        
         is_parquet = dataset_source.endswith('.parquet')
         train_dataset, val_dataset, eval_dataset = retrieve_dataset(dataset_cfg, is_parquet=is_parquet)
         set_seed(seed)
 
+        output_dir_path = f"./experiments/{dataset_cfg.source}/{model_name if '/' not in model_name else model_name.split('/')[-1]}/seed_{seed}/{active_learning_cfg.strategy}"
+        # output_dir_path = f"./experiments/{dataset_cfg.source}/{model_name if '/' not in model_name else model_name.split('/')[-1]}/full_dataset_train"
         training_cfg = TrainingConfig(
             seed=seed,
-            output_dir=f"./experiments/{dataset_cfg.source}/{model_name if '/' not in model_name else model_name.split('/')[-1]}/seed_{seed}/{active_learning_cfg.strategy}",
+            output_dir= output_dir_path,
             evaluation_strategy='epoch' if TRAIN_ARGS['has_validation'] else 'no',
             save_strategy='epoch' if TRAIN_ARGS['has_validation'] else 'no',
             **TRAIN_ARGS,
         )
+        print(training_cfg)
         train_args = get_train_args(training_cfg)
+        print(f' BF16 IS: {train_args.bf16}')
      
         setup_logging_to_file(training_cfg.output_dir)
         logging.info(f"Running experiment with seed {seed}")
@@ -121,9 +132,9 @@ def main(learner_strategy: str, dataset_key: str, model_key: str):
 
 if __name__ == "__main__":
     dataset_key = 'aeslc'
-    model_key = 'pegasus_large'
 
-    nltk.download('punkt_tab')
-    for learner_strategy in LEARNERS:
-        print(f"\n{'='*20} Running Experiment: Learner='{learner_strategy}', Model='{model_key}', Dataset='{dataset_key}' {'='*20}\n")
-        main(learner_strategy, dataset_key, model_key)
+    for model_key in MODELS:
+        nltk.download('punkt_tab')
+        for learner_strategy in LEARNERS:
+            print(f"\n{'='*20} Running Experiment: Learner='{learner_strategy}', Model='{model_key}', Dataset='{dataset_key}' {'='*20}\n")
+            main(learner_strategy, dataset_key, model_key)

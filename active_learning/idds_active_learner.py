@@ -7,6 +7,7 @@ from tqdm import tqdm
 import json
 import torch.nn as nn
 import numpy as np
+import time
 
 class IDDSActiveLearner(BaseActiveLearner):
     def __init__(self, *args, **kwargs):
@@ -14,7 +15,13 @@ class IDDSActiveLearner(BaseActiveLearner):
         if isinstance(self.embeddings, np.ndarray):
             self.embeddings = torch.from_numpy(self.embeddings).to(self.train_args.device)
 
+        logging.info("IDDS: Starting one-time pre-computation of similarity sum...")
+        start_time = time.time()
         self.similarities_sum = self._compute_embeddings_similarities_sum()
+        end_time = time.time()
+        precomputation_time = end_time - start_time
+        logging.info(f"IDDS: Finished pre-computation in {precomputation_time:.2f} seconds.")
+        self._write_data_to_file({"idds_precomputation_time_seconds": precomputation_time}, '/acquisition_times.json')
 
     def needs_embeddings(self):
         return True

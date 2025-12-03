@@ -6,49 +6,40 @@ BASE_ARGS = {
 }
 
 TRAIN_ARGS= {
-    'flan-t5-large': {
-    **BASE_ARGS,
-    'per_device_train_batch_size': 6,
-    'per_device_eval_batch_size': 16,
-    'learning_rate': 3e-5,
-    'num_train_epochs': 3,
-    'optim': "adafactor",
-    'generation_num_beams': 3,
-    'weight_decay': 0.01,
-    'min_train_steps': None
-    },
+    # 'flan-t5-large': {
+    # **BASE_ARGS,
+    # 'per_device_train_batch_size': 6,
+    # 'per_device_eval_batch_size': 16,
+    # 'learning_rate': 3e-5,
+    # 'num_train_epochs': 3,
+    # 'optim': "adafactor",
+    # 'generation_num_beams': 3,
+    # 'weight_decay': 0.01,
+    # 'min_train_steps': None
+    # },
     'bart-base': { 
     **BASE_ARGS,
     'per_device_train_batch_size': 16,
-    'per_device_eval_batch_size': 25,
+    'per_device_eval_batch_size': 32,
     'learning_rate': 2e-5,
     'num_train_epochs': 6,
     'optim': "adamw_torch",
     'generation_num_beams': 4,
     'weight_decay': 0.028,
-    'min_train_steps': 350
+    'min_train_steps': 350,
+    'bf16': False
     },
     'pegasus-large': {
     **BASE_ARGS,   
     'per_device_train_batch_size': 8,
     'per_device_eval_batch_size': 16,
-    'learning_rate': 5e-4,
+    'learning_rate': 5e-5,
     'num_train_epochs': 4,
     'optim': "adamw_torch",
     'generation_num_beams': 4,
     'weight_decay': 0.03,
-    'min_train_steps': 200
-    },
-    't5-small': {
-    **BASE_ARGS,
-    'per_device_train_batch_size': 6,
-    'per_device_eval_batch_size': 16,
-    'learning_rate': 3e-5,
-    'num_train_epochs': 3,
-    'optim': "adafactor",
-    'generation_num_beams': 3,
-    'weight_decay': 0.01,
-    'min_train_steps': None
+    'min_train_steps': 200,
+    'bf16': True
     }
 }
 
